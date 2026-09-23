@@ -1,0 +1,36 @@
+# ---------------- 依赖与构建产物 ----------------
+node_modules/
+frontend/dist/
+backend/target/
+backend/target_old/
+*.jar
+
+# ---------------- 数据（大文件不入库） ----------------
+# 算法服务数据约 546MB（covers/raw 等数万文件），GitHub 单文件限 100MB，
+# 故不纳入版本库；部署时按 deploy/README.md 经 scp 上传服务器。
+recommender/data/
+*.sql
+recsys_dump.sql
+
+# ---------------- 本地工具与环境 ----------------
+tools/
+maven.zip
+redis.zip
+start_all.bat
+*.log
+logs/
+*.tmp
+.trae/
+
+# ---------------- Python ----------------
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---------------- IDE / OS ----------------
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

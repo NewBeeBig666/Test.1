@@ -1,0 +1,37 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: recsys-backend
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/recsys?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      timeout: 1s
+
+# 推荐算法服务（Python FastAPI）
+algo:
+  base-url: http://127.0.0.1:8001
+  # 推荐结果缓存TTL（分钟）
+  cache-ttl-minutes: 30
+
+# 平台生成封面（课程设计封面 PNG）目录，相对后端运行目录
+app:
+  covers-dir: ../recommender/data/covers
+
+logging:
+  level:
+    com.recsys: info
