@@ -190,7 +190,7 @@ def main():
     print(f">> 封面生成完成：本次 {n} 张，目录 {OUT_DIR}")
 
     # 更新 MySQL course.poster_url
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4")
     with conn.cursor() as cur:
         for _, row in meta.iterrows():

@@ -53,7 +53,7 @@ def main():
     print(f">> 完成：新命中 {got}/{done}")
 
     have = meta[meta["poster_url"].fillna("").astype(str).str.strip() != ""]
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4")
     with conn.cursor() as cur:
         for _, row in have.iterrows():

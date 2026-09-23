@@ -244,7 +244,7 @@ def main():
     print(f">> items_meta.csv: {before} -> {len(meta)} 行（+{len(add)} 中国课程）")
 
     # 2) MySQL course 表（幂等 REPLACE）
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4")
     with conn.cursor() as cur:
         for r in rows:

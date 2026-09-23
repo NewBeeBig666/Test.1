@@ -170,7 +170,7 @@ def main():
                                      "extra", "note", "item_id", "source_url"])
     print(df.groupby(["domain", "region"]).size())
 
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                            database="recsys", charset="utf8mb4")
     with conn.cursor() as cur:
         cur.execute("""CREATE TABLE IF NOT EXISTS world_content (

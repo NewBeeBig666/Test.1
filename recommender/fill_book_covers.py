@@ -220,7 +220,7 @@ def main():
         meta.to_csv(META, index=False)
         print(f">> 已生成 {len(dead)} 张程序化封面并回写 items_meta.csv")
 
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4")
     with conn.cursor() as cur:
         if not args.check_only and dead:

@@ -3,6 +3,8 @@ node_modules/
 frontend/dist/
 backend/target/
 backend/target_old/
+# 前端 vite 构建产物（输出至后端 static，由 deploy/02-build.sh 在部署时重建）
+backend/src/main/resources/static/
 *.jar
 
 # ---------------- 数据（大文件不入库） ----------------

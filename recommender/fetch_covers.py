@@ -158,7 +158,7 @@ def main():
 
     # ---- 同步 MySQL（即时生效）----
     try:
-        conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+        conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                                 database="recsys", charset="utf8mb4")
         with conn.cursor() as cur:
             for idx, row in have.iterrows():

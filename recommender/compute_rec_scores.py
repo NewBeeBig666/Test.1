@@ -96,7 +96,7 @@ def rec_scores(domain: str) -> pd.Series:
 
 def main():
     # 1) 三域 rec_score -> items_meta.csv + MySQL
-    conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", port=3306, user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4", local_infile=False)
     tables = {"books": "book", "courses": "course", "movies": "movie"}
 

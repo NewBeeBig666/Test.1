@@ -106,7 +106,7 @@ def main():
     if not len(todo):
         return
     os.makedirs(OUT, exist_ok=True)
-    conn = pymysql.connect(host="127.0.0.1", user="root", password="root",
+    conn = pymysql.connect(host="127.0.0.1", user="root", password=os.environ.get("DB_PASSWORD", "root"),
                             database="recsys", charset="utf8mb4")
     n = 0
     with conn.cursor() as cur:
