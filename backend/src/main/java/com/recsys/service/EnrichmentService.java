@@ -356,7 +356,7 @@ public class EnrichmentService {
 
     private boolean headOk(String url) {
         try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+HttpURLConnection conn = (HttpURLConnection) java.net.URI.create(url).toURL().openConnection();
             conn.setInstanceFollowRedirects(true);
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);

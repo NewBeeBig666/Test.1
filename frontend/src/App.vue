@@ -1,6 +1,7 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import AppNavbar from '@/components/AppNavbar.vue'
+import AiChatWidget from '@/components/AiChatWidget.vue'
 
 const route = useRoute()
 </script>
@@ -21,4 +22,6 @@ const route = useRoute()
       <span>SpringBoot + FastAPI + MySQL + Redis · Vue 3 + Element Plus</span>
     </div>
   </footer>
+  <!-- AI 助手（常驻悬浮按钮 + 可拖拽 + 对话面板） -->
+  <AiChatWidget />
 </template>

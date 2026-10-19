@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -38,6 +38,8 @@ const origTitle = computed(() => {
 })
 
 // 封面来源：books.imageUrl / movies.coverUrl（IMDb 海报）/ courses.poster_url
+// 图片加载失败（死链/超时/防盗链）时降级为无图渐变排版卡，不留空白封面
+const coverFailed = ref(false)
 const hasCover = computed(() => {
   const it = props.item
   return !!(it.image_url || it.imageUrl || it.cover_url || it.coverUrl)
@@ -46,6 +48,9 @@ const coverSrc = computed(() => {
   const it = props.item
   return it.image_url || it.imageUrl || it.cover_url || it.coverUrl || ''
 })
+// 封面切换（翻页/区域切换复用组件）时重置失败标记
+watch(coverSrc, () => { coverFailed.value = false })
+const showCover = computed(() => hasCover.value && !coverFailed.value)
 
 // 课程类目图标（矢量，无限分辨率，响应式自适应）
 const COURSE_ICON = {
@@ -96,9 +101,9 @@ const scoreText = computed(() => {
 
 <template>
   <div class="item-card card" :data-item-id="item.itemId">
-    <div class="item-cover" :class="hasCover ? '' : (item.domain === 'courses' ? 'course-cover ' + meta.grad : meta.grad)">
-      <img v-if="hasCover" :src="coverSrc" :alt="mainTitle" loading="lazy"
-           @error="$event.target.style.display = 'none'" />
+    <div class="item-cover" :class="showCover ? '' : (item.domain === 'courses' ? 'course-cover ' + meta.grad : meta.grad)">
+      <img v-if="showCover" :src="coverSrc" :alt="mainTitle" loading="lazy" decoding="async"
+           @error="coverFailed = true" />
       <template v-else-if="item.domain === 'courses'">
         <div class="course-glyph">{{ courseIcon }}</div>
         <div class="cover-typo">

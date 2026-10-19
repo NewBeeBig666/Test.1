@@ -46,6 +46,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // 用绝对路径 URI，避免相对 file: 位置在不同运行目录下解析失败
         java.io.File dir = new java.io.File(coversDir).getAbsoluteFile();
         registry.addResourceHandler("/covers/**")
-                .addResourceLocations(dir.toURI().toString());
+                .addResourceLocations(dir.toURI().toString())
+                .setCacheControl(org.springframework.http.CacheControl.maxAge(
+                        java.time.Duration.ofDays(7)));
+        // 首屏性能：Vite 产物文件名带内容哈希，可设一年 immutable 长缓存
+        //（二次访问 JS/CSS 零请求，仅 index.html 因 SPA 回退不走静态缓存）
+        registry.addResourceHandler("/assets/**")
+                .addResourceLocations("classpath:/static/assets/")
+                .setCacheControl(org.springframework.http.CacheControl.maxAge(
+                        java.time.Duration.ofDays(365)).cachePublic().immutable());
     }
 }

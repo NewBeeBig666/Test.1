@@ -82,7 +82,7 @@ public class ItemService {
     private final CourseRepository courses;
     private final MovieRepository movies;
     private final WorldContentRepository world;
-    private final Map<String, Discovery> discoCache = new HashMap<>();
+    private final Map<String, Discovery> discoCache = new java.util.concurrent.ConcurrentHashMap<>();
     /** 中文译名词典（titles_zh.json：movies/books 热门译名 + orig 原语言名） */
     private final Map<String, Map<String, String>> zhDict;
 
@@ -334,20 +334,80 @@ public class ItemService {
         return d.regionByItem().getOrDefault(itemId, "美国");
     }
 
-    /** 中国课程精选（course 表内国内平台课程；/world?domain=courses 联动） */
-    public Map<String, Object> cnCourses(String region, int page, int size) {
+    /** 区域课程精选（/world?domain=courses 联动）：中国=国内平台课程，美国=Udemy 目录。
+     *  q 非空时区域内全库过滤（课程名/类目）后手动分页，保证跨页命中。 */
+    public Map<String, Object> regionCourses(String region, String q, int page, int size) {
         int p = Math.max(0, page), s = Math.min(Math.max(1, size), 48);
-        if (!"中国".equals(region)) {
+        boolean cn = "中国".equals(region);
+        if (!cn && !"美国".equals(region)) {
             return Map.of("domain", "courses", "region", region == null ? "" : region,
                     "content", List.of(), "page", p, "totalPages", 0, "totalElements", 0);
         }
-        Page<Course> result = courses.findByPlatformNotIgnoreCase("Udemy",
-                PageRequest.of(p, s, Sort.by("itemId").ascending()));
-        return Map.of("domain", "courses", "region", "中国",
-                "content", result.map(this::toDTO).getContent().stream()
-                        .map(ItemDTO::toMap).collect(Collectors.toList()),
-                "page", p, "totalPages", result.getTotalPages(),
-                "totalElements", result.getTotalElements());
+        String kw = q == null ? "" : q.trim().toLowerCase();
+        // 区域内全库过滤（平台维度 + 关键词维度），再手动分页（2258 门规模可承受）
+        List<Course> filtered = courses.findAll(Sort.by("itemId").ascending()).stream()
+                .filter(c -> cn == isCnPlatform(c.getPlatform()))
+                .filter(c -> kw.isEmpty() || containsKw(c.getTitle(), kw) || containsKw(c.getCategory(), kw))
+                .collect(Collectors.toList());
+        int from = Math.min(p * s, filtered.size());
+        int to = Math.min(from + s, filtered.size());
+        List<Map<String, Object>> content = filtered.subList(from, to).stream()
+                .map(c -> toDTO(c).toMap()).collect(Collectors.toList());
+        return Map.of("domain", "courses", "region", cn ? "中国" : "美国",
+                "content", content, "page", p,
+                "totalPages", (filtered.size() + s - 1) / s,
+                "totalElements", filtered.size());
+    }
+
+    /** null 安全的忽略大小写关键词匹配 */
+    private boolean containsKw(String text, String kw) {
+        return text != null && text.toLowerCase().contains(kw);
+    }
+
+    /** 美国区域精选（主目录内容：英语图书 / 好莱坞影库；电影排除区域精选条目，
+     *  badge 由 toDTO 统一标注「美国」，返回标准卡片格式与 /items 一致）。
+     *  q 非空时在当前页内按关键词过滤（书名/作者、电影名）。 */
+    public Map<String, Object> usContent(String domain, int page, int size, String q) {
+        checkDomain(domain);
+        String kw = q == null ? "" : q.trim().toLowerCase();
+        int p = Math.max(0, page), s = Math.min(Math.max(1, size), 48);
+        PageRequest pageable = PageRequest.of(p, s, Sort.by("itemId").ascending());
+        if ("books".equals(domain)) {
+            // 区域内搜索：全库书名/作者关键词查询（分页由 JPA 完成）；
+            //  无关键词时保持全表分页浏览
+            Page<Book> result = kw.isEmpty()
+                    ? books.findAll(pageable)
+                    : books.findByTitleContainingOrAuthorContainingIgnoreCase(kw, kw, pageable);
+            List<Map<String, Object>> content = result.map(this::toDTO).getContent().stream()
+                    .map(ItemDTO::toMap).collect(Collectors.toList());
+            return Map.of("domain", "books", "region", "美国",
+                    "content", content, "page", p,
+                    "totalPages", result.getTotalPages(),
+                    "totalElements", result.getTotalElements());
+        }
+        // 电影主目录排除区域精选（regionByItem 标注实际来源的条目）
+        Set<Long> regionIds = discovery("movies").regionByItem().keySet();
+        List<Movie> us = movies.findAll(Sort.by("itemId").ascending()).stream()
+                .filter(m -> !regionIds.contains(m.getItemId()))
+                .filter(m -> kw.isEmpty() || (m.getTitle() != null && m.getTitle().toLowerCase().contains(kw)))
+                .collect(Collectors.toList());
+        int from = Math.min(p * s, us.size());
+        int to = Math.min(from + s, us.size());
+        List<Map<String, Object>> content = us.subList(from, to).stream()
+                .map(m -> toDTO(m).toMap()).collect(Collectors.toList());
+        return Map.of("domain", "movies", "region", "美国", "content", content,
+                "page", p, "totalPages", (us.size() + s - 1) / s, "totalElements", us.size());
+    }
+
+    /** 美国区域内容计数（/world/stats 徽章） */
+    public long usCount(String domain) {
+        if ("books".equals(domain)) {
+            return books.count();
+        }
+        if ("movies".equals(domain)) {
+            return movies.count() - discovery("movies").regionByItem().size();
+        }
+        return courses.countByPlatformIgnoreCase("Udemy");
     }
 
     /** 中国课程平台（regionOf 判定：非 Udemy 平台均视为中国课程） */

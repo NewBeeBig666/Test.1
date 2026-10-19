@@ -16,8 +16,8 @@ const DOMAINS = [
   { key: 'movies', label: '电影', eyebrow: '光影世界', grad: 'grad-movies', desc: 'MovieLens 影库 3650 部' },
 ]
 
-/** 首页区域筛选：全部（全球混排）/ 指定区域精选 */
-const REGIONS = ['中国', '日本', '韩国', '欧洲', '拉美', '世界其他']
+/** 首页区域筛选：全部（全球混排）/ 指定区域精选（美国=主目录内容，其余=区域精选） */
+const REGIONS = ['中国', '美国', '日本', '韩国', '欧洲', '拉美', '世界其他']
 const region = ref('')
 
 const recs = reactive({ books: [], courses: [], movies: [] })
@@ -42,6 +42,7 @@ const mapWorldItem = (w, dkey) => dkey === 'movies'
       recScore: w.recScore ?? w.rec_score }
   : { itemId: -w.id, domain: dkey, title: w.title, titleZh: w.titleZh,
       origTitle: w.origTitle, subtitle: w.subtitle,
+      imageUrl: w.imageUrl ?? w.image_url,
       badge: w.region, note: w.note, sourceUrl: w.sourceUrl,
       recScore: w.recScore ?? w.rec_score }
 
@@ -56,57 +57,63 @@ const openItem = (item, domain) => {
 
 const loadAll = async () => {
   loading.value = true
-  await Promise.all(DOMAINS.map(async (d) => {
-    try {
+  try {
+    // 首屏性能：单次聚合请求获取三域推荐内容 + 跨域画像（原 7 次 API 往返合并为 1 次）
+    // 会话过期（本地残留旧 token）：自动重建匿名游客会话并重试一次，无需手动刷新
+    let home = await request.get('/home', {
+      params: region.value ? { region: region.value } : {},
+    }).catch((e) => (e?.response?.status === 401 ? 'RETRY' : null))
+    if (home === 'RETRY') {
+      auth.clear()
+      if (await auth.ensureSession()) {
+        home = await request.get('/home', {
+          params: region.value ? { region: region.value } : {},
+        }).catch(() => null)
+      }
+    }
+    if (!home || home === 'RETRY') return
+    for (const d of DOMAINS) {
+      const sec = home.domains?.[d.key] || {}
       if (region.value) {
-        // 区域模式：课程域支持中国课程（国内六大平台）；其他区域暂未收录
+        // 区域模式：课程为中国/美国平台标准卡片；图书/电影为精选条目（需字段映射，
+        // 美国区域图书返回主目录内容，已是标准卡片格式）
         if (d.key === 'courses') {
-          if (region.value === '中国') {
-            const rc = await request.get('/world', {
-              params: { domain: 'courses', region: '中国', size: 12 },
-            }).catch(() => null)
-            recs[d.key] = (rc?.content || []).map((c) => ({ ...c, domain: 'courses' }))
-          } else {
-            recs[d.key] = []
-          }
-          return
+          recs[d.key] = (sec.content || []).map((c) => ({ ...c, domain: 'courses' }))
+        } else {
+          recs[d.key] = region.value === '美国' && d.key === 'books'
+            ? (sec.content || [])
+            : (sec.content || []).map((w) => mapWorldItem(w, d.key))
         }
-        const r = await request.get('/world', {
-          params: { domain: d.key, region: region.value, size: 12 },
-        })
-        recs[d.key] = (r.content || []).map((w) => mapWorldItem(w, d.key))
         cold[d.key] = false
-        return
+      } else {
+        // 全部模式：全球发现流 6 条 + 个性化推荐 6 条交错（区域多样 + 个性兼顾）
+        // 推荐响应为下划线字段，统一映射为 ItemCard 读取的驼峰字段
+        const recItems = (sec.rec || []).map((it) => ({
+          ...it,
+          itemId: it.item_id ?? it.itemId,
+          titleZh: it.title_zh ?? it.titleZh,
+          origTitle: it.orig_title ?? it.origTitle,
+          recScore: it.rec_score ?? it.recScore,
+          coverUrl: it.cover_url ?? it.coverUrl,
+          imageUrl: it.image_url ?? it.imageUrl,
+          sourceUrl: it.source_url ?? it.sourceUrl,
+        }))
+        const discoItems = sec.disco || []
+        const mixed = []
+        for (let i = 0; i < Math.max(recItems.length, discoItems.length); i++) {
+          if (discoItems[i]) mixed.push(discoItems[i])
+          if (recItems[i]) mixed.push(recItems[i])
+        }
+        recs[d.key] = mixed
+        cold[d.key] = !!sec.cold
       }
-      // 全部模式：全球发现流 6 条 + 个性化推荐 6 条交错（区域多样 + 个性兼顾）
-      const [rec, disco] = await Promise.all([
-        request.get('/rec/recommend', { params: { domain: d.key, algo: 'ItemCF', n: 6 } }).catch(() => null),
-        request.get('/items', { params: { domain: d.key, size: 6 } }).catch(() => null),
-      ])
-      // 推荐响应为下划线字段，统一映射为 ItemCard 读取的驼峰字段
-      const recItems = (rec?.items || []).map((it) => ({
-        ...it,
-        itemId: it.item_id ?? it.itemId,
-        titleZh: it.title_zh ?? it.titleZh,
-        origTitle: it.orig_title ?? it.origTitle,
-        recScore: it.rec_score ?? it.recScore,
-        coverUrl: it.cover_url ?? it.coverUrl,
-        imageUrl: it.image_url ?? it.imageUrl,
-        sourceUrl: it.source_url ?? it.sourceUrl,
-      }))
-      const discoItems = disco?.content || []
-      const mixed = []
-      for (let i = 0; i < Math.max(recItems.length, discoItems.length); i++) {
-        if (discoItems[i]) mixed.push(discoItems[i])
-        if (recItems[i]) mixed.push(recItems[i])
-      }
-      recs[d.key] = mixed
-      cold[d.key] = !!rec?.cold_start
-    } catch (e) { /* 单域失败不阻塞页面 */ }
-  }))
-  loading.value = false
-  request.get('/rec/profile/global').then(p => { globalProfile.value = p }).catch(() => {})
-  requestTick()
+    }
+    // 跨域画像：匿名游客无行为数据时后端返回 null，画像板块自动隐藏
+    globalProfile.value = home.profile || null
+  } finally {
+    loading.value = false
+    requestTick()
+  }
 }
 
 /** 渐入动画 + view 曝光埋点（仅目录内物品：正数 itemId） */
@@ -126,7 +133,16 @@ const io = new IntersectionObserver((entries) => {
 }, { threshold: 0.12 })
 
 watch(region, loadAll)
-onMounted(loadAll)
+onMounted(() => {
+  loadAll()
+  // 首屏后空闲时预取栏目页 chunk（router 懒加载产物），点击"浏览全部"零等待
+  const warm = () => import('@/views/DomainView.vue')
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(warm, { timeout: 3000 })
+  } else {
+    setTimeout(warm, 1500)
+  }
+})
 </script>
 
 <template>
@@ -208,7 +224,7 @@ onMounted(loadAll)
           <router-link :to="'/' + d.key">{{ d.label }}馆</router-link>
           浏览、评分或收藏，即刻获得个性化推荐。
         </el-alert>
-        <el-alert v-if="region && region !== '中国' && d.key === 'courses' && !loading" type="info" :closable="false"
+        <el-alert v-if="region && d.key === 'courses' && !loading && !recs[d.key].length" type="info" :closable="false"
                   style="margin-top: 18px; border-radius: 14px">
           该地区课程内容暂未收录（国际课程以美国平台为主），可切换"中国"查看国内六大平台课程。
         </el-alert>

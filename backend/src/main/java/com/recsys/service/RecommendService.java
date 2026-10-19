@@ -53,10 +53,12 @@ public class RecommendService {
                 long itemId = o.path("item_id").asLong();
                 ItemDTO dto = itemService.findForEnrich(domain, itemId);
                 if (dto != null) {
-                    if (dto.imageUrl() != null && o.path("image_url").isMissingNode()) {
+                    // 封面以数据库为权威源（数据集自带 images.amazon.com 外链已全面失效 403，
+                    // DB 已全量替换为本地程序化封面），无条件覆盖算法侧的旧链接
+                    if (dto.imageUrl() != null) {
                         o.put("image_url", dto.imageUrl());
                     }
-                    if (dto.coverUrl() != null && o.path("cover_url").isMissingNode()) {
+                    if (dto.coverUrl() != null) {
                         o.put("cover_url", dto.coverUrl());
                     }
                     if (dto.sourceUrl() != null) {

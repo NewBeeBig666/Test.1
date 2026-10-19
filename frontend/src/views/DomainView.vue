@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import request from '@/api/request'
 import ItemCard from '@/components/ItemCard.vue'
@@ -47,9 +47,9 @@ const META = {
 const meta = META[props.domain]
 const track = useTrack(props.domain)
 
-/** 区域浏览：中国/日本/韩国/欧洲/拉美及世界其他（图书=公版世界文学，电影=国际佳作；
- *  课程域暂无版权合规的多国课程数据，保持类目筛选） */
-const REGIONS = ['中国', '日本', '韩国', '欧洲', '拉美', '世界其他']
+/** 区域浏览：美国/中国/日本/韩国/欧洲/拉美及世界其他（美国=主目录内容，其余=精选
+ *  图书=公版世界文学，电影=国际佳作；课程域暂无版权合规的多国课程数据，保持类目筛选） */
+const REGIONS = ['中国', '美国', '日本', '韩国', '欧洲', '拉美', '世界其他']
 const hasRegions = computed(() => props.domain !== 'courses')
 
 const q = ref('')
@@ -62,7 +62,16 @@ const items = ref([])
 const loading = ref(false)
 const drawerItem = ref(null)
 
-const search = () => { region.value = ''; load(0) }
+/** 区域内精准搜索：选定区域后，搜索自动限定在该区域内执行（不清除区域筛选）；
+ *  未选区域时为全域搜索（原有交互保持不变） */
+const search = () => load(0)
+
+/** 搜索框占位文案：区域模式下明确提示搜索范围已限定 */
+const searchPlaceholder = computed(() =>
+  region.value ? `在【${region.value}】内${meta.placeholder}` : meta.placeholder)
+
+/** 类目筛选：区域模式下禁用（区域内容为精选集，不支持类目维度过滤） */
+const catDisabled = computed(() => !!region.value)
 
 /** 区域精选数据（world_content）-> 卡片数据（统一抽屉详情：图书负 ID） */
 const mapWorld = (w) => props.domain === 'movies'
@@ -72,6 +81,7 @@ const mapWorld = (w) => props.domain === 'movies'
       recScore: w.recScore ?? w.rec_score }
   : { itemId: -w.id, domain: 'books', title: w.title, titleZh: w.titleZh,
       origTitle: w.origTitle, subtitle: w.subtitle,
+      imageUrl: w.imageUrl ?? w.image_url,
       badge: w.region, note: `${w.note} · ${w.extra}`, sourceUrl: w.sourceUrl,
       recScore: w.recScore ?? w.rec_score }
 
@@ -80,11 +90,15 @@ const load = async (p = 0) => {
   page.value = p
   try {
     if (region.value) {
-      // 区域模式：浏览该区域的精选内容（电影在 movie 表内联动详情，图书为公版经典）
+      // 区域模式：浏览/搜索该区域内容（电影在 movie 表内联动详情，图书为公版经典；
+      //  美国区域返回主目录内容，已是标准卡片格式，无需字段映射；
+      //  q 非空时后端在区域内按标题关键词精准过滤）
       const r = await request.get('/world', {
-        params: { domain: props.domain, region: region.value, page: p, size },
+        params: { domain: props.domain, region: region.value, q: q.value || undefined, page: p, size },
       })
-      items.value = (r.content || []).map(mapWorld)
+      items.value = region.value === '美国'
+        ? (r.content || [])
+        : (r.content || []).map(mapWorld)
       total.value = r.totalElements || 0
     } else {
       const params = { domain: props.domain, q: q.value, page: p, size }
@@ -118,6 +132,47 @@ const openItem = (item) => {
   drawerItem.value = item
 }
 
+// ------------------------------------------------------------------
+// 选中文本 → 搜索：拖选页面内容后浮出"搜索"按钮，点击以选中文本执行站内搜索
+// ------------------------------------------------------------------
+const selBtn = ref(null)   // { x, y } 浮动按钮位置（视口坐标）
+const pendingSel = ref('')
+
+const onDocMouseUp = (e) => {
+  // 输入框内的选中不触发（保持输入交互原样）
+  if (e.target.closest('input, textarea, .el-input__inner')) { selBtn.value = null; return }
+  setTimeout(() => {  // 等待浏览器确定选区
+    const sel = window.getSelection()
+    const text = sel ? sel.toString().trim() : ''
+    if (sel && sel.rangeCount > 0 && text.length >= 1 && text.length <= 60) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect()
+      if (rect.width > 0 || rect.height > 0) {
+        pendingSel.value = text
+        selBtn.value = {
+          x: Math.min(Math.max(rect.left + rect.width / 2, 70), window.innerWidth - 70),
+          y: Math.max(rect.top - 42, 10),
+        }
+        return
+      }
+    }
+    selBtn.value = null
+  }, 10)
+}
+
+const searchSelection = () => {
+  const text = pendingSel.value
+  if (text) {
+    q.value = text          // 选中文本自动填充到搜索框
+    search()                // 复用原有搜索逻辑（清区域筛选 + load(0)）
+  }
+  window.getSelection()?.removeAllRanges()
+  selBtn.value = null
+}
+
+const onDocSelectionClear = () => {  // 选区被清除时收起按钮
+  if (!window.getSelection()?.toString()) selBtn.value = null
+}
+
 watch(activeCat, () => { if (!region.value) load(0) })
 watch(region, () => load(0))
 onMounted(() => {
@@ -129,6 +184,13 @@ onMounted(() => {
       .then((d) => { track.track('click', openId); drawerItem.value = d })
       .catch(() => {})
   }
+  document.addEventListener('mouseup', onDocMouseUp)
+  document.addEventListener('selectionchange', onDocSelectionClear)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mouseup', onDocMouseUp)
+  document.removeEventListener('selectionchange', onDocSelectionClear)
+  selBtn.value = null
 })
 </script>
 
@@ -141,15 +203,22 @@ onMounted(() => {
         <p class="text-2">{{ meta.desc }}</p>
 
         <div style="display: flex; gap: 12px; margin-top: 26px; max-width: 560px">
-          <el-input v-model="q" :placeholder="meta.placeholder" size="large" clearable
-                    :disabled="!!region"
+          <el-input v-model="q" :placeholder="searchPlaceholder" size="large" clearable
                     @keyup.enter="search" @clear="() => { q = ''; load(0) }" />
-          <button class="btn" style="padding: 0 26px" :disabled="!!region" @click="search">搜索</button>
+          <button class="btn" style="padding: 0 26px" @click="search">搜索</button>
+        </div>
+
+        <!-- 搜索范围限定提示：区域模式下告知用户搜索已自动限定在所选区域 -->
+        <div v-if="region" class="search-scope-tip">
+          <span>🔍 当前搜索已限定在【{{ region }}】区域内{{ q ? ` · 关键词“${q}”` : '' }}</span>
+          <button class="scope-clear" title="清除区域限制，恢复全域搜索"
+                  @click="region = ''">取消区域限制</button>
         </div>
 
         <div v-if="meta.categories" style="display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap">
           <button v-for="c in meta.categories" :key="c.en" class="chip chip-lg"
                   :class="{ active: activeCat === c.en }" style="cursor: pointer; border: none"
+                  :disabled="catDisabled" :title="catDisabled ? '区域模式下暂不支持类目筛选' : ''"
                   @click="activeCat = activeCat === c.en ? '' : c.en">
             {{ c.zh }}
           </button>
@@ -173,7 +242,11 @@ onMounted(() => {
           <ItemCard v-for="item in items" :key="item.itemId" :item="item" @click="openItem(item)" />
         </div>
         <div v-if="!loading && !items.length" style="text-align: center; padding: 60px 0" class="text-3">
-          没有找到匹配的内容，换个关键词试试
+          <template v-if="region">【{{ region }}】区域内没有找到“{{ q || '相关' }}”的内容，
+            可换个关键词或<button class="scope-clear" style="display: inline; padding: 0 4px"
+              @click="region = ''">取消区域限制</button>全域搜索
+          </template>
+          <template v-else>没有找到匹配的内容，换个关键词试试</template>
         </div>
         <div style="display: flex; justify-content: center; margin-top: 36px">
           <el-pagination v-if="total > size" background layout="prev, pager, next" :total="total"
@@ -184,5 +257,68 @@ onMounted(() => {
     </section>
 
     <ItemDrawer :domain="props.domain" :item="drawerItem" @close="drawerItem = null" @rated="() => {}" />
+
+    <!-- 选中文本浮动搜索按钮（拖选页面内容后浮出，点击以选中文本搜索） -->
+    <button v-if="selBtn" class="sel-search" :style="{ left: selBtn.x + 'px', top: selBtn.y + 'px' }"
+            title="用选中文本搜索"
+            @mousedown.prevent @click="searchSelection">
+      🔍 搜索“{{ pendingSel.length > 8 ? pendingSel.slice(0, 8) + '…' : pendingSel }}”
+    </button>
   </div>
 </template>
+
+<style scoped>
+/* 搜索范围限定提示条（区域模式下显示，与平台提示风格一致） */
+.search-scope-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 14px;
+  max-width: 560px;
+  border-radius: 10px;
+  background: rgba(13, 102, 255, 0.07);
+  border: 1px solid rgba(13, 102, 255, 0.22);
+  color: #0d66ff;
+  font-size: 13px;
+}
+.scope-clear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #0d66ff;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  flex-shrink: 0;
+}
+.scope-clear:hover { opacity: 0.75; }
+/* 类目筛选禁用态（区域模式下） */
+.chip:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 选中文本浮动搜索按钮（跟随选区上方，胶囊样式与平台风格一致） */
+.sel-search {
+  position: fixed;
+  z-index: 1400;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1px solid rgba(13, 102, 255, 0.3);
+  color: #0d66ff;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 30, 90, 0.16);
+  transition: background 0.2s, border-color 0.2s;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-search:hover {
+  background: rgba(13, 102, 255, 0.07);
+  border-color: rgba(13, 102, 255, 0.55);
+}
+</style>

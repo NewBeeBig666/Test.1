@@ -23,6 +23,11 @@ start_all.bat
 logs/
 *.tmp
 .trae/
+# 智谱 AI Key（含敏感凭证，仅本地存在，绝不入库）
+backend/.env
+# Redis 本地持久化文件（运行时产物）
+dump.rdb
+*.rdb
 
 # ---------------- Python ----------------
 __pycache__/

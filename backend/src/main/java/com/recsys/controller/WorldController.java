@@ -19,14 +19,16 @@ import com.recsys.service.ItemService;
 import com.recsys.service.ItemService.ItemDTO;
 
 /**
- * 环球精选（多区域内容库）：中国 / 日本 / 韩国 / 欧洲及其他世界区域。
- * 电影行关联 movie 表（详情抽屉/海报/评分推荐全联动）；图书为 Gutenberg 公版书。
+ * 环球精选（多区域内容库）：美国 / 中国 / 日本 / 韩国 / 欧洲及其他世界区域。
+ * 美国区域为主目录内容（英语图书 / Udemy 课程 / 好莱坞影库），其余区域来自 world_content
+ * （电影行关联 movie 表，详情抽屉/海报/评分推荐全联动；图书为 Gutenberg 公版书）。
  */
 @RestController
 @RequestMapping("/api/world")
 public class WorldController {
 
-    private static final Set<String> REGIONS = Set.of("中国", "日本", "韩国", "欧洲", "拉美", "世界其他");
+    private static final Set<String> REGIONS =
+            Set.of("中国", "美国", "日本", "韩国", "欧洲", "拉美", "世界其他");
 
     private final WorldContentRepository repo;
     private final ItemService itemService;
@@ -39,22 +41,35 @@ public class WorldController {
     @GetMapping
     public Map<String, Object> list(@RequestParam(defaultValue = "movies") String domain,
                                     @RequestParam(required = false) String region,
+                                    @RequestParam(required = false) String q,
                                     @RequestParam(defaultValue = "0") int page,
                                     @RequestParam(defaultValue = "12") int size) {
         if (region != null && !REGIONS.contains(region)) {
             throw new IllegalArgumentException("region 须为 " + REGIONS);
         }
-        // 课程域：中国课程（course 表国内平台）；其他区域暂未收录
+        String kw = q == null ? "" : q.trim();
+        // 课程域：区域课程（中国=国内平台，美国=Udemy 目录）；其他区域暂未收录
         if ("courses".equals(domain)) {
-            return itemService.cnCourses(region, Math.max(0, page), size);
+            return itemService.regionCourses(region, kw, Math.max(0, page), size);
         }
         if (!Set.of("movies", "books").contains(domain)) {
             throw new IllegalArgumentException("domain 须为 movies|books|courses");
         }
         int p = Math.max(0, page), s = Math.min(Math.max(1, size), 48);
-        Page<WorldContent> result = region == null || region.isBlank()
-                ? repo.findByDomain(domain, PageRequest.of(p, s))
-                : repo.findByDomainAndRegion(domain, region, PageRequest.of(p, s));
+        // 美国区域：主目录内容（标准卡片格式，与 /items 一致）；q 非空时区域内关键词过滤
+        if ("美国".equals(region)) {
+            return itemService.usContent(domain, p, s, kw);
+        }
+        // 区域内精准搜索：q 非空且已选区域时，在该区域的精选内容中按标题匹配
+        Page<WorldContent> result;
+        if (!kw.isEmpty() && region != null && !region.isBlank()) {
+            result = repo.findByDomainAndRegionAndTitleContainingIgnoreCase(
+                    domain, region, kw, PageRequest.of(p, s));
+        } else {
+            result = region == null || region.isBlank()
+                    ? repo.findByDomain(domain, PageRequest.of(p, s))
+                    : repo.findByDomainAndRegion(domain, region, PageRequest.of(p, s));
+        }
 
         List<Map<String, Object>> content = new ArrayList<>();
         for (WorldContent w : result.getContent()) {
@@ -105,7 +120,9 @@ public class WorldController {
         for (String d : List.of("movies", "books")) {
             Map<String, Object> byRegion = new LinkedHashMap<>();
             for (String region : REGIONS) {
-                long c = repo.countByDomainAndRegion(d, region);
+                long c = "美国".equals(region)
+                        ? itemService.usCount(d)
+                        : repo.countByDomainAndRegion(d, region);
                 if (c > 0) {
                     byRegion.put(region, c);
                 }

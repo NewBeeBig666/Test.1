@@ -1,10 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+// 首屏性能：首页为落地页，静态导入打进主包（随 entry modulepreload 一起预载，
+// 省去首路由动态 chunk 的额外往返）；其余页面保持懒加载按需获取
+import HomeView from '@/views/HomeView.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { public: true } },
   { path: '/register', name: 'register', component: () => import('@/views/RegisterView.vue'), meta: { public: true } },
-  { path: '/', name: 'home', component: () => import('@/views/HomeView.vue') },
+  { path: '/', name: 'home', component: HomeView },
   { path: '/books', name: 'books', component: () => import('@/views/DomainView.vue'), props: { domain: 'books' } },
   { path: '/courses', name: 'courses', component: () => import('@/views/DomainView.vue'), props: { domain: 'courses' } },
   { path: '/movies', name: 'movies', component: () => import('@/views/DomainView.vue'), props: { domain: 'movies' } },

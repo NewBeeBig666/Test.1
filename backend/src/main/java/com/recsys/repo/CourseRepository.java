@@ -17,4 +17,9 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
     /** 中国课程（国内平台）：按平台排除 Udemy */
     Page<Course> findByPlatformNotIgnoreCase(String platform, Pageable pageable);
+
+    /** 美国课程（Udemy 平台目录） */
+    Page<Course> findByPlatformIgnoreCase(String platform, Pageable pageable);
+
+    long countByPlatformIgnoreCase(String platform);
 }
